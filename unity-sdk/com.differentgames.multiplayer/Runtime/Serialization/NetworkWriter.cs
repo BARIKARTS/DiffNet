@@ -6,10 +6,10 @@ using UnityEngine;
 namespace DifferentGames.Multiplayer.Serialization
 {
     /// <summary>
-    /// Zero-allocation, unsafe pointer tabanlı ağ yazıcısı (Serializer).
-    /// Sabit boyutlu bir stack buffer üzerine yazar, heap allocation yaratmaz.
+    /// Zero-allocation, unsafe pointer based network writer (Serializer).
+    /// Writes onto a fixed-size stack buffer, creates no heap allocation.
     /// 
-    /// Kullanım:
+    /// Usage:
     /// <code>
     /// var writer = new NetworkWriter(stackalloc byte[256]);
     /// writer.WriteFloat(3.14f);
@@ -28,7 +28,7 @@ namespace DifferentGames.Multiplayer.Serialization
         public bool IsOverflow => _position > _capacity;
 
         /// <summary>
-        /// Span üzerinden başlatma. stackalloc ile kullanımı önerilir.
+        /// Initialization over Span. Recommended to use with stackalloc.
         /// </summary>
         public NetworkWriter(Span<byte> buffer)
         {
@@ -106,11 +106,11 @@ namespace DifferentGames.Multiplayer.Serialization
             _position += 8;
         }
 
-        // ─── Compressed Float (Oyunlarda yaygın: 16-bit half precision) ───
+        // ─── Compressed Float (Common in games: 16-bit half precision) ───
 
         /// <summary>
-        /// Bir float değerini 2 Byte'a sıkıştırır (±range, precision doğrultusunda).
-        /// Pozisyon delta, açı gibi değerlerin bant genişliği tasarrufu için idealdir.
+        /// Compresses a float value into 2 Bytes (according to ±range, precision).
+        /// Ideal for bandwidth saving of position delta, angle, etc.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteCompressedFloat(float value, float min, float max, float precision)
@@ -139,13 +139,13 @@ namespace DifferentGames.Multiplayer.Serialization
         }
 
         /// <summary>
-        /// Quaternion'ı "Smallest Three" (4 float yerine 3.5 float eşdeğeri) yöntemiyle sıkıştırır.
-        /// ~32% bant genişliği tasarrufu sağlar.
+        /// Compresses a Quaternion using the "Smallest Three" method (3.5 float equivalent instead of 4 floats).
+        /// Provides ~32% bandwidth savings.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteQuaternionCompressed(Quaternion q)
         {
-            // En büyük bileşeni bul ve çıkar (alıcı tarraf onu yeniden hesaplar)
+            // Find and remove the largest component (the receiver will recalculate it)
             float absX = Mathf.Abs(q.x), absY = Mathf.Abs(q.y),
                   absZ = Mathf.Abs(q.z), absW = Mathf.Abs(q.w);
 
@@ -178,8 +178,8 @@ namespace DifferentGames.Multiplayer.Serialization
         // ─── Struct Serialization (Zero-Copy Struct Write) ────────────────
 
         /// <summary>
-        /// Herhangi bir unmanaged struct'ı doğrudan pointer üzerinden buffer'a yazar.
-        /// Sıfır kopyalama (Zero-Copy), sıfır allocation.
+        /// Writes any unmanaged struct directly to the buffer via pointer.
+        /// Zero-Copy, zero allocation.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteStruct<T>(in T value) where T : unmanaged
@@ -204,7 +204,7 @@ namespace DifferentGames.Multiplayer.Serialization
 
         // ─── Output ───────────────────────────────────────────────────────
 
-        /// <summary>Yazılmış veriyi ReadOnlySpan olarak döndürür (kopyalama yok).</summary>
+        /// <summary>Returns the written data as a ReadOnlySpan (no copying).</summary>
         public ReadOnlySpan<byte> ToSpan() => new ReadOnlySpan<byte>(_buffer, _position);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

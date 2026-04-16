@@ -4,13 +4,13 @@ using DifferentGames.Multiplayer.Components;
 using UnityEngine;
 
 /// <summary>
-/// SDK Kullanım Örneği.
-/// Bu scripti bir NetworkRunner bileşenine sahip GameObject üzerine ekle.
+/// SDK Usage Example.
+/// Attach this script to a GameObject that has a NetworkRunner component.
 ///
-/// Sahne Kurulumu:
-///   1. Boş GameObject → Add Component → NetworkRunner
-///   2. Boş GameObject → Add Component → NetworkBootstrap (bu script)
-///   3. Inspector'dan playerPrefab ve callbacksTarget'ı ata
+/// Scene Setup:
+///   1. Empty GameObject → Add Component → NetworkRunner
+///   2. Empty GameObject → Add Component → NetworkBootstrap (this script)
+///   3. Assign playerPrefab and callbacksTarget from Inspector
 /// </summary>
 public class NetworkBootstrap : MonoBehaviour, INetworkCallbacks
 {
@@ -41,7 +41,7 @@ public class NetworkBootstrap : MonoBehaviour, INetworkCallbacks
     {
         Debug.Log($"[Bootstrap] Player joined: {player}");
 
-        // Sunucu tarafında yeni oyuncuya kendi karakter nesnesini spawn et
+        // Spawn character object for the new player on server side
         if (_runner.IsServer && _playerPrefab != null)
         {
             _runner.Spawn(
@@ -65,24 +65,24 @@ public class NetworkBootstrap : MonoBehaviour, INetworkCallbacks
 }
 
 /// <summary>
-/// Örnek Player bileşeni. SDK API'sini nasıl kullanacağını gösterir.
+/// Sample Player component. Shows how to use the SDK API.
 /// </summary>
 public class PlayerController : NetworkBehaviour
 {
     [Header("Movement")]
     [SerializeField] private float _speed = 5f;
 
-    // ─── [Networked] Değişkenler: Otomatik senkronize edilir ─────────────────
+    // ─── [Networked] Variables: Automatically synchronized ─────────────────
 
     [Networked] public float Health { get; set; } = 100f;
     [Networked] public int Score { get; set; } = 0;
     [Networked(serverOnly: true)] public bool IsAlive { get; set; } = true;
 
-    // ─── Deterministik Döngü ─────────────────────────────────────────────────
+    // ─── Deterministic Loop ─────────────────────────────────────────────────
 
     public override void FixedUpdateNetwork()
     {
-        // Sadece bu nesnenin InputAuthority'si olan istemci input okur
+        // Only the client with InputAuthority for this object reads input
         if (!HasInputAuthority) return;
 
         float h = Input.GetAxisRaw("Horizontal");
@@ -91,28 +91,28 @@ public class PlayerController : NetworkBehaviour
 
         if (dir.sqrMagnitude > 0.01f)
         {
-            // Sunucuya input gönder
+            // Send input to server
             RpcSendInput(dir, _speed);
         }
     }
 
     public override void Render()
     {
-        // Görsel update - interpolasyon burada yapılır (NetworkTransform otomatik halleder)
+        // Visual update - interpolation is done here (NetworkTransform handles it automatically)
     }
 
-    // ─── [Rpc] Metodlar ───────────────────────────────────────────────────────
+    // ─── [Rpc] Methods ───────────────────────────────────────────────────────
 
-    /// <summary>İstemci → Sunucu: Hareket inputu gönder</summary>
+    /// <summary>Client → Server: Send movement input</summary>
     [Rpc(RpcTargets.Server, Reliable = false, Channel = 0)]
     public void RpcSendInput(Vector3 direction, float speed)
     {
-        // Sunucu bu metodu alır ve fizik hesabı yapar
+        // Server receives this method and performs physics calculation
         if (!HasStateAuthority) return;
-        transform.position += direction * speed * (1f / 60f); // TickRate ile normalize
+        transform.position += direction * speed * (1f / 60f); // Normalize with TickRate
     }
 
-    /// <summary>Sunucu → Tümü: Hasar al</summary>
+    /// <summary>Server → All: Take damage</summary>
     [Rpc(RpcTargets.All, Reliable = true)]
     public void RpcTakeDamage(float amount, NetworkPlayerRef attacker)
     {
@@ -121,11 +121,11 @@ public class PlayerController : NetworkBehaviour
             Health -= amount;
             if (Health <= 0) IsAlive = false;
         }
-        // Tüm istemcilerde efekt çal:
+        // Play effect on all clients:
         Debug.Log($"{name} took {amount} damage from {attacker}! HP: {Health}");
     }
 
-    /// <summary>Sunucu → Sahip: Skor güncelle (sadece owner görsün)</summary>
+    /// <summary>Server → Owner: Update score (only owner sees it)</summary>
     [Rpc(RpcTargets.Owner)]
     public void RpcUpdateScore(int newScore)
     {
@@ -133,17 +133,17 @@ public class PlayerController : NetworkBehaviour
         Debug.Log($"Your score: {Score}");
     }
 
-    // ─── Manuel Veri Gönderimi ────────────────────────────────────────────────
+    // ─── Manual Data Transmission ────────────────────────────────────────────────
 
     public void SendCustomData(byte[] customPacket)
     {
-        // İleri seviye: Ham byte gönderimi (DeliveryMode belirt)
+        // Advanced: Raw byte transmission (specify DeliveryMode)
         SendManual(customPacket, DeliveryMode.ReliableOrdered);
     }
 
     private void OnEnable()
     {
-        // Gelen Manuel veriyi dinle
+        // Listen to incoming Manual data
         OnManualDataReceived += HandleManualData;
     }
 

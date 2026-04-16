@@ -8,27 +8,27 @@ using UnityEngine;
 namespace DifferentGames.Multiplayer.Core
 {
     /// <summary>
-    /// Attribute cache'ini başlatma (initialization) sırasında, Reflection ile bir kez doldurur.
-    /// Sonraki frame'lerde O(1) lookup yapılmasını sağlar. GC baskısı yaratmaz.
+    /// Fills the attribute cache during initialization using Reflection once.
+    /// Ensures O(1) lookup in subsequent frames. Does not create GC pressure.
     /// </summary>
     public static class NetworkAttributeCache
     {
-        // Per-Type cache: Her MonoBehaviour tipi için RPC metodlarını saklar
+        // Per-Type cache: Stores RPC methods for each MonoBehaviour type
         private static readonly Dictionary<Type, RpcMethodInfo[]> _rpcCache
             = new Dictionary<Type, RpcMethodInfo[]>();
 
-        // Per-Type cache: Her MonoBehaviour tipi için Networked Field/Property'leri saklar
+        // Per-Type cache: Stores Networked Fields/Properties for each MonoBehaviour type
         private static readonly Dictionary<Type, NetworkedMemberInfo[]> _networkedCache
             = new Dictionary<Type, NetworkedMemberInfo[]>();
 
         /// <summary>
-        /// Verilen tip için attribute tarama işlemini ilk kez çalıştırır ve cache'e yazar.
-        /// Sonraki çağrılarda yalnızca cache okur.
+        /// Runs the attribute scanning process for the given type for the first time and writes to the cache.
+        /// Subsequent calls read only from the cache.
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         public static void WarmupAll()
         {
-            // Unity domain'inde tüm tipleri önceden tara (Optional: yalnızca NetworkBehaviour subclass'ları)
+            // Pre-scan all types in the Unity domain (Optional: only NetworkBehaviour subclasses)
             var assemblies = AppDomain.CurrentDomain.GetAssemblies();
             foreach (var assembly in assemblies)
             {
@@ -48,7 +48,7 @@ namespace DifferentGames.Multiplayer.Core
         }
 
         /// <summary>
-        /// Tipin tüm [Rpc] metodlarını döndürür (cache'den okur veya yapılandırır).
+        /// Returns all [Rpc] methods of the type (reads from cache or configures).
         /// </summary>
         public static RpcMethodInfo[] GetRpcMethods(Type type)
         {
@@ -67,7 +67,7 @@ namespace DifferentGames.Multiplayer.Core
                     {
                         Method = method,
                         Attribute = attr,
-                        // RPC ID: Method adından deterministik bir hash üret
+                        // RPC ID: Generate a deterministic hash from the Method name
                         RpcId = (ushort)(method.Name.GetHashCode() & 0xFFFF)
                     });
                 }
@@ -79,7 +79,7 @@ namespace DifferentGames.Multiplayer.Core
         }
 
         /// <summary>
-        /// Tipin tüm [Networked] field ve property'lerini döndürür.
+        /// Returns all [Networked] fields and properties of the type.
         /// </summary>
         public static NetworkedMemberInfo[] GetNetworkedMembers(Type type)
         {
@@ -128,15 +128,15 @@ namespace DifferentGames.Multiplayer.Core
         }
     }
 
-    /// <summary>Cache'lenmiş RPC metot bilgisi.</summary>
+    /// <summary>Cached RPC method information.</summary>
     public struct RpcMethodInfo
     {
         public MethodInfo Method;
         public RpcAttribute Attribute;
-        public ushort RpcId;  // Ağ üzerinden taşınan compact kimlik
+        public ushort RpcId;  // Compact identity carried over the network
     }
 
-    /// <summary>Cache'lenmiş Networked member bilgisi.</summary>
+    /// <summary>Cached Networked member information.</summary>
     public struct NetworkedMemberInfo
     {
         public MemberInfo MemberInfo;

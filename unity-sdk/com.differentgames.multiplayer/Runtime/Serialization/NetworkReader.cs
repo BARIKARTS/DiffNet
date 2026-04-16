@@ -5,10 +5,10 @@ using UnityEngine;
 namespace DifferentGames.Multiplayer.Serialization
 {
     /// <summary>
-    /// Zero-allocation, unsafe pointer tabanlı ağ okuyucusu (Deserializer).
-    /// Gelen ham byte verisi üzerinde kopyalama yapmadan okuma yapar.
+    /// Zero-allocation, unsafe pointer based network reader (Deserializer).
+    /// Reads from incoming raw byte data without copying.
     ///
-    /// Kullanım:
+    /// Usage:
     /// <code>
     /// var reader = new NetworkReader(rawData);
     /// float speed = reader.ReadFloat();
@@ -25,7 +25,7 @@ namespace DifferentGames.Multiplayer.Serialization
         public int Remaining => _length - _position;
         public bool EndOfData => _position >= _length;
 
-        /// <summary>ReadOnlySpan üzerinden başlatma (Socket verisini kopyalamadan sarmalar).</summary>
+        /// <summary>Initialization over ReadOnlySpan (wraps Socket data without copying).</summary>
         public NetworkReader(ReadOnlySpan<byte> data)
         {
             fixed (byte* ptr = data)
@@ -34,7 +34,7 @@ namespace DifferentGames.Multiplayer.Serialization
             _position = 0;
         }
 
-        /// <summary>Raw pointer ile başlatma (Socket callback'lerindeki byte* uyumluluğu).</summary>
+        /// <summary>Initialization with raw pointer (compatibility with byte* in socket callbacks).</summary>
         public NetworkReader(byte* buffer, int length)
         {
             _buffer = buffer;
@@ -48,7 +48,7 @@ namespace DifferentGames.Multiplayer.Serialization
         public byte ReadByte()
         {
             CheckBounds(1);
-            return _buffer[_position++];
+            return _buffer[_position++]
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -119,7 +119,7 @@ namespace DifferentGames.Multiplayer.Serialization
 
         // ─── Compressed Float ─────────────────────────────────────────────
 
-        /// <summary>NetworkWriter.WriteCompressedFloat ile yazılmış değeri geri çözer.</summary>
+        /// <summary>Decodes a value written with NetworkWriter.WriteCompressedFloat.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public float ReadCompressedFloat(float min, float max, float precision)
         {
@@ -135,7 +135,7 @@ namespace DifferentGames.Multiplayer.Serialization
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Vector3 ReadVector3() => new Vector3(ReadFloat(), ReadFloat(), ReadFloat());
 
-        /// <summary>NetworkWriter.WriteQuaternionCompressed ile yazılmış Quaternion'ı geri çözer.</summary>
+        /// <summary>Decodes a Quaternion written with NetworkWriter.WriteQuaternionCompressed.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Quaternion ReadQuaternionCompressed()
         {
@@ -144,7 +144,7 @@ namespace DifferentGames.Multiplayer.Serialization
             float b = ReadCompressedFloat(-1f, 1f, 0.0001f);
             float c = ReadCompressedFloat(-1f, 1f, 0.0001f);
 
-            // En büyük bileşeni q.x^2 + q.y^2 + q.z^2 + q.w^2 = 1 formülüyle yeniden hesapla
+            // Recalculate the largest component using the formula q.x^2 + q.y^2 + q.z^2 + q.w^2 = 1
             float largest = Mathf.Sqrt(Mathf.Max(0f, 1f - a * a - b * b - c * c));
 
             return largestIndex switch
@@ -159,8 +159,8 @@ namespace DifferentGames.Multiplayer.Serialization
         // ─── Struct Deserialization (Zero-Copy) ───────────────────────────
 
         /// <summary>
-        /// Herhangi bir unmanaged struct'ı doğrudan pointer üzerinden okur.
-        /// Kopyalama yok, allocation yok.
+        /// Reads any unmanaged struct directly via pointer.
+        /// No copying, no allocation.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public T ReadStruct<T>() where T : unmanaged
@@ -174,7 +174,7 @@ namespace DifferentGames.Multiplayer.Serialization
 
         // ─── Raw Bytes ────────────────────────────────────────────────────
 
-        /// <summary>Belirtilen uzunluktaki veriyi kopyalamadan Span olarak döndürür.</summary>
+        /// <summary>Returns the data of specified length as a Span without copying.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ReadOnlySpan<byte> ReadBytes(int count)
         {
@@ -186,11 +186,11 @@ namespace DifferentGames.Multiplayer.Serialization
 
         // ─── Seek ─────────────────────────────────────────────────────────
 
-        /// <summary>Okuma pozisyonunu sıfırlar.</summary>
+        /// <summary>Resets the reading position.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Reset() => _position = 0;
 
-        /// <summary>Okuma pozisyonunu atlar (header'i skip etmek için).</summary>
+        /// <summary>Skips the reading position (to skip the header).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Skip(int bytes)
         {

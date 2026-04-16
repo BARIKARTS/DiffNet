@@ -5,7 +5,7 @@ using System.Net;
 using System.Net.Sockets;
 using DifferentGames.Multiplayer.Attributes;
 using DifferentGames.Multiplayer.Components;
-using DifferentGames.Multiplayer.Serialization;
+using DifferentGames.Multiplayer.Core;
 using UnityEngine;
 
 namespace DifferentGames.Multiplayer
@@ -34,17 +34,42 @@ namespace DifferentGames.Multiplayer
         [Tooltip("Server IP address to connect to (used only in Client mode).")]
         [SerializeField] private string _serverAddress = "127.0.0.1";
 
+        [Header("Session Contract")]
+        [Tooltip("Configuration defining delta-compression and buffers limit")]
+        [SerializeField] private NetworkConfig _config = NetworkConfig.Default;
+
         [Header("Callbacks")]
         [Tooltip("Component that will listen for network events (INetworkCallbacks).")]
         [SerializeField] private MonoBehaviour _callbacksTarget;
 
         // ── Public State ──────────────────────────────────────────────────────
+        
+        public NetworkConfig Config => _config;
 
         public bool IsRunning { get; private set; }
         public bool IsServer { get; private set; }
         public bool IsClient => !IsServer;
         public NetworkPlayerRef LocalPlayer { get; private set; } = NetworkPlayerRef.None;
+
+        /// <summary>
+        /// Current simulation tick. During prediction or resimulation, this matches the currently executing tick.
+        /// </summary>
         public NetworkTick CurrentTick { get; private set; } = NetworkTick.Invalid;
+        
+        /// <summary>
+        /// The latest verified and authoritative tick from the server.
+        /// </summary>
+        public NetworkTick ServerTick { get; private set; } = NetworkTick.Invalid;
+        
+        /// <summary>
+        /// The client's predicted local tick (ahead of the server).
+        /// </summary>
+        public NetworkTick LocalTick { get; private set; } = NetworkTick.Invalid;
+
+        /// <summary>
+        /// Ring buffer storing inputs sent to the server.
+        /// </summary>
+        public Core.NetworkInputBuffer InputBuffer { get; private set; }
 
         /// <summary>
         /// Interpolation alpha value in the render frame. Between 0-1.
@@ -55,8 +80,11 @@ namespace DifferentGames.Multiplayer
         // ── Internal Data Structures ──────────────────────────────────────────
 
         private INetworkCallbacks _callbacks;
+        private InterestManager _interestManager;
         private readonly Dictionary<NetworkObjectId, NetworkObject> _spawnedObjects = new();
         private readonly Dictionary<NetworkPlayerRef, IPEndPoint> _playerEndpoints = new();
+        private readonly Dictionary<NetworkPlayerRef, NetworkTick> _playerAckedTicks = new();
+        private readonly Dictionary<NetworkPlayerRef, NetworkObject> _playerAnchors = new();
         private uint _nextObjectId = 1;
 
         // UDP transport (simple wrapper - RUDP adapter would be integrated in a real project)
@@ -86,6 +114,10 @@ namespace DifferentGames.Multiplayer
 
             IsRunning = true;
             CurrentTick = new NetworkTick(0);
+            ServerTick = new NetworkTick(0);
+            LocalTick = new NetworkTick(0);
+            InputBuffer = new Core.NetworkInputBuffer(_config.StateHistorySize);
+            _interestManager = new InterestManager(this, _config, _playerAnchors);
 
             _callbacks = _callbacksTarget as INetworkCallbacks;
             _callbacks?.OnConnectedToServer(LocalPlayer);
@@ -111,6 +143,7 @@ namespace DifferentGames.Multiplayer
             _udpClient.Client.Blocking = false;
 
             IsRunning = true;
+            InputBuffer = new Core.NetworkInputBuffer(_config.StateHistorySize);
             _callbacks = _callbacksTarget as INetworkCallbacks;
 
             // Send "Connect" request to the server
@@ -132,6 +165,7 @@ namespace DifferentGames.Multiplayer
 
             _spawnedObjects.Clear();
             _playerEndpoints.Clear();
+            _playerAckedTicks.Clear();
             CurrentTick = NetworkTick.Invalid;
 
             _callbacks?.OnShutdown();
@@ -167,6 +201,8 @@ namespace DifferentGames.Multiplayer
             netObj.NetworkInitialize(this, id, owner);
             _spawnedObjects[id] = netObj;
 
+            _interestManager?.AddObject(netObj);
+
             Debug.Log($"[NetworkRunner] Spawned {prefab.name} → {id} (owner: {owner})");
             return netObj;
         }
@@ -177,8 +213,17 @@ namespace DifferentGames.Multiplayer
         public void Despawn(NetworkObject netObj)
         {
             if (netObj == null) return;
+            _interestManager?.RemoveObject(netObj);
             _spawnedObjects.Remove(netObj.ObjectId);
             Destroy(netObj.gameObject);
+        }
+
+        /// <summary>
+        /// Registers a NetworkObject as the physical anchor (center point) for a player's Area of Interest.
+        /// </summary>
+        public void SetPlayerAnchor(NetworkPlayerRef player, NetworkObject anchor)
+        {
+            _playerAnchors[player] = anchor;
         }
 
         // ── Data Transmission (Internal API) ───────────────────────────────────
@@ -263,37 +308,128 @@ namespace DifferentGames.Multiplayer
 
         private void SimulateTick()
         {
-            CurrentTick = CurrentTick.Next;
-
-            // Call all NetworkBehaviour.FixedUpdateNetwork()
-            foreach (var netObj in _spawnedObjects.Values)
-                foreach (var nb in netObj.Behaviours)
-                    nb.FixedUpdateNetwork();
-
-            // If server: send state snapshot of everyone
             if (IsServer)
-                BroadcastSnapshot();
+            {
+                ServerTick = ServerTick.Next;
+                CurrentTick = ServerTick;
+
+                foreach (var netObj in _spawnedObjects.Values)
+                {
+                    foreach (var nb in netObj.Behaviours)
+                        nb.FixedUpdateNetwork();
+                        
+                    _interestManager?.UpdateObjectPosition(netObj);
+                }
+
+                // Record state and send
+                foreach (var netObj in _spawnedObjects.Values)
+                    foreach (var nb in netObj.Behaviours)
+                        nb.RecordCurrentState();
+                        
+                SendSnapshots();
+            }
+            else
+            {
+                LocalTick = LocalTick.Next;
+                CurrentTick = LocalTick;
+
+                // Fire Input prediction (Callback for developers)
+                var inputProvider = new Core.NetworkInputProvider(InputBuffer, LocalTick);
+                _callbacks?.OnProvideInput(this, inputProvider);
+
+                foreach (var netObj in _spawnedObjects.Values)
+                    foreach (var nb in netObj.Behaviours)
+                        nb.FixedUpdateNetwork();
+
+                // Predictive record: We must save our local guess so we can compare it with Server Snapshot later!
+                foreach (var netObj in _spawnedObjects.Values)
+                    foreach (var nb in netObj.Behaviours)
+                        nb.RecordCurrentState();
+
+                // Send Inputs dynamically (unreliable usually)
+                SendInputsToServer();
+            }
+        }
+        
+        private void SendInputsToServer()
+        {
+            // Implementation mapping inputs into 0x04 Packet
+        }
+
+        private void Resimulate(NetworkTick startTick)
+        {
+            // Snap C# memory back to startTick
+            foreach(var obj in _spawnedObjects.Values)
+                foreach(var nb in obj.Behaviours)
+                    nb.SnapToTick(startTick);
+
+            // Resimulate from startTick+1 to LocalTick
+            for (int t = startTick.Value + 1; t <= LocalTick.Value; t++)
+            {
+                CurrentTick = new NetworkTick(t);
+                
+                foreach(var obj in _spawnedObjects.Values)
+                    foreach(var nb in obj.Behaviours)
+                        nb.FixedUpdateNetwork();
+                        
+                // Re-record locally predictive states to history!
+                foreach(var obj in _spawnedObjects.Values)
+                    foreach(var nb in obj.Behaviours)
+                        nb.RecordCurrentState();
+            }
+            
+            CurrentTick = LocalTick;
         }
 
         // ── Snapshot Broadcast ────────────────────────────────────────────────
 
-        private unsafe void BroadcastSnapshot()
+        private unsafe void SendSnapshots()
         {
-            Span<byte> snapshotBuffer = stackalloc byte[1024];
+            Span<byte> snapshotBuffer = stackalloc byte[8192];
 
-            foreach (var netObj in _spawnedObjects.Values)
+            foreach (var kvp in _playerEndpoints)
             {
+                NetworkPlayerRef targetPlayer = kvp.Key;
+                IPEndPoint ep = kvp.Value;
+                
+                // Fetch the last confirmed tick for this client. 
+                // Assumed 0 if they haven't sent any ACKs yet.
+                NetworkTick baselineTick = _playerAckedTicks[targetPlayer];
+                
                 var writer = new NetworkWriter(snapshotBuffer);
                 writer.WriteByte(0x01);               // Packet Type: Snapshot
-                writer.WriteInt((int)netObj.ObjectId.Value);
                 writer.WriteInt(CurrentTick.Value);
+                writer.WriteInt(baselineTick.Value);  // Server informs client about diff-baseline
 
-                foreach (var nb in netObj.Behaviours)
-                    nb.SerializeState(ref writer);
+                // 1. Grid-based Visibility Generation for this Frame
+                if (IsServer) _interestManager?.UpdateVisibilityForPlayer(targetPlayer, (int)_nextObjectId);
+
+                // Write all visible objects into the single packet
+                // (In production, you'd chunk this if over MTU of 1200 bytes)
+                foreach (var netObj in _spawnedObjects.Values)
+                {
+                    if (_interestManager != null && !_interestManager.IsVisible(targetPlayer, netObj))
+                    {
+                        continue; // Culled by Area of Interest / Scoping rules
+                    }
+
+                    // Check if object JUST entered the AOI
+                    NetworkTick objectBaseline = baselineTick;
+                    if (_interestManager != null && _interestManager.JustEntered(targetPlayer, netObj))
+                    {
+                        objectBaseline = NetworkTick.Invalid; // Forces a FULL Delta state (Bypasses diff tracking)
+                    }
+
+                    writer.WriteInt((int)netObj.ObjectId.Value);
+                    foreach (var nb in netObj.Behaviours)
+                        nb.SerializeDeltaState(ref writer, objectBaseline);
+                }
+
+                // Packet termination marker
+                writer.WriteInt(0); 
 
                 var data = writer.ToSpan().ToArray();
-                foreach (var ep in _playerEndpoints.Values)
-                    _udpClient?.Send(data, data.Length, ep);
+                _udpClient?.Send(data, data.Length, ep);
             }
         }
 
@@ -331,7 +467,7 @@ namespace DifferentGames.Multiplayer
                 switch (packetType)
                 {
                     case 0x00: // Connect Request
-                        if (IsServer) HandleConnectRequest(remote);
+                        if (IsServer) HandleConnectRequest(remote, ref reader);
                         break;
 
                     case 0x01: // Snapshot
@@ -351,13 +487,25 @@ namespace DifferentGames.Multiplayer
 
         // ── Packet Handlers ───────────────────────────────────────────────────
 
-        private void HandleConnectRequest(IPEndPoint remote)
+        private void HandleConnectRequest(IPEndPoint remote, ref NetworkReader reader)
         {
+            // Read Handshake payload: NetworkConfig
+            int clientMaxVars = reader.ReadInt();
+            int clientBuffer = reader.ReadInt();
+            int clientGrid = reader.ReadInt();
+
+            if (clientMaxVars != _config.MaxNetworkedVariables || clientBuffer != _config.StateHistorySize || clientGrid != _config.AOIGridCellSize)
+            {
+                Debug.LogWarning($"[NetworkRunner] Client connection rejected: Contract mismatch. Server(Vars:{_config.MaxNetworkedVariables}, Buf:{_config.StateHistorySize}, Grid:{_config.AOIGridCellSize}) vs Client({clientMaxVars}, {clientBuffer}, {clientGrid})");
+                return; // Disconnect silently or send a specialized rejection packet
+            }
+
             // Allocate new player ID
             var playerId = new NetworkPlayerRef(_playerEndpoints.Count + 1);
             _playerEndpoints[playerId] = remote;
+            _playerAckedTicks[playerId] = new NetworkTick(0);
 
-            Debug.Log($"[NetworkRunner] Player joined: {playerId} from {remote}");
+            Debug.Log($"[NetworkRunner] Player joined: {playerId} from {remote} with Valid Contract");
             _callbacks?.OnPlayerJoined(playerId);
 
             // Send acceptance packet
@@ -367,16 +515,63 @@ namespace DifferentGames.Multiplayer
 
         private unsafe void HandleSnapshot(ref NetworkReader reader)
         {
-            uint objectId = (uint)reader.ReadInt();
-            int tick = reader.ReadInt();
-            var netId = new NetworkObjectId(objectId);
+            int serverTickVal = reader.ReadInt();
+            int baselineTick = reader.ReadInt();
+            
+            // Server just approved this tick
+            ServerTick = new NetworkTick(serverTickVal);
+            bool stateChanged = false;
 
-            if (!_spawnedObjects.TryGetValue(netId, out var netObj)) return;
+            // The client might be freshly initializing or heavily decoupled
+            if (!LocalTick.IsValid || ServerTick.Value > LocalTick.Value) 
+            {
+                LocalTick = ServerTick;
+                CurrentTick = ServerTick;
+            }
 
-            CurrentTick = new NetworkTick(tick);
+            while (reader.Remaining >= 4)
+            {
+                uint objectId = (uint)reader.ReadInt();
+                if (objectId == 0) break; // End of packet
 
-            foreach (var nb in netObj.Behaviours)
-                nb.DeserializeState(ref reader);
+                var netId = new NetworkObjectId(objectId);
+                if (_spawnedObjects.TryGetValue(netId, out var netObj))
+                {
+                    netObj.LastReceivedSnapshotTick = ServerTick;
+                    
+                    // Awaken from AOI Object Pooling dynamically
+                    if (_config.EnableAOI && !netObj.gameObject.activeSelf)
+                        netObj.gameObject.SetActive(true);
+
+                    foreach (var nb in netObj.Behaviours)
+                    {
+                        if (nb.DeserializeDeltaState(ref reader, new NetworkTick(baselineTick), ServerTick))
+                        {
+                            stateChanged = true;
+                        }
+                    }
+                }
+            }
+
+            // Post-Process: Interest Management Disabling
+            if (_config.EnableAOI)
+            {
+                foreach (var netObj in _spawnedObjects.Values)
+                {
+                    // If server hasn't sent us an update for this tick, it's culled (or we're ignoring updates for our own predicted items? No, server always sends our own).
+                    if (netObj.LastReceivedSnapshotTick.Value != ServerTick.Value && netObj.InputAuthority != LocalPlayer)
+                    {
+                        if (netObj.gameObject.activeSelf)
+                            netObj.gameObject.SetActive(false); // Put back to pool / sleep
+                    }
+                }
+            }
+
+            // Client-Side Reconciliation Trigger (Rollback & Repay)
+            if (stateChanged && ServerTick.Value < LocalTick.Value)
+            {
+                Resimulate(ServerTick);
+            }
         }
 
         private unsafe void HandleRpc(ref NetworkReader reader, IPEndPoint remote)
@@ -398,9 +593,16 @@ namespace DifferentGames.Multiplayer
         }
 
 
-        private void SendConnectRequest()
+        private unsafe void SendConnectRequest()
         {
-            byte[] packet = { 0x00 }; // Connect Request
+            Span<byte> buffer = stackalloc byte[16];
+            var writer = new NetworkWriter(buffer);
+            writer.WriteByte(0x00); // 0x00: Connect Request
+            writer.WriteInt(_config.MaxNetworkedVariables); // Session Contract: Networked Vars Limit
+            writer.WriteInt(_config.StateHistorySize);      // Session Contract: Buffer Size
+            writer.WriteInt(_config.AOIGridCellSize);       // Session Contract: Grid Cell Size
+
+            var packet = writer.ToSpan().ToArray();
             _udpClient?.Send(packet, packet.Length, _serverEndPoint);
         }
 

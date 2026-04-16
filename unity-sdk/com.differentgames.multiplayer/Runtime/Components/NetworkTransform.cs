@@ -32,27 +32,44 @@ namespace DifferentGames.Multiplayer.Components
 
         public override void FixedUpdateNetwork()
         {
-            if (!HasStateAuthority) return;
+            // Owner or Server controls the actual logic transform
+            if (HasStateAuthority || HasInputAuthority)
+            {
+                if (CurrentTick.Value % _sendRateTickInterval != 0) return;
 
-            // Tick interval check
-            if (CurrentTick.Value % _sendRateTickInterval != 0) return;
-
-            // Update state from current transform (server or authority player)
-            NetworkPosition = transform.position;
-            NetworkRotation = transform.rotation;
-            if (_syncScale) NetworkScale = transform.localScale;
+                NetworkPosition = transform.position;
+                NetworkRotation = transform.rotation;
+                if (_syncScale) NetworkScale = transform.localScale;
+            }
+            else
+            {
+                // Proxy immediately snaps logic boundaries
+                _prevPosition = transform.position;
+                _prevRotation = transform.rotation;
+                transform.position = NetworkPosition;
+                transform.rotation = NetworkRotation;
+            }
         }
 
         public override void Render()
         {
-            if (HasStateAuthority) return; // Server does not perform interpolation
+            if (HasStateAuthority) return;
 
             if (_interpolate)
             {
-                // Alpha: current frame's position within the Tick
-                float alpha = Runner != null ? Runner.InterpolationAlpha : 1f;
-                transform.position = Vector3.Lerp(_prevPosition, NetworkPosition, alpha);
-                transform.rotation = Quaternion.Slerp(_prevRotation, NetworkRotation, alpha);
+                if (HasInputAuthority)
+                {
+                    // Smoothing factor for Rollback corrections (Reconciliation Snap hiding)
+                    transform.position = Vector3.Lerp(transform.position, NetworkPosition, Time.deltaTime * 15f);
+                    transform.rotation = Quaternion.Slerp(transform.rotation, NetworkRotation, Time.deltaTime * 15f);
+                }
+                else
+                {
+                    // Regular snapshot interpolation for proxies
+                    float alpha = Runner != null ? Runner.InterpolationAlpha : 1f;
+                    transform.position = Vector3.Lerp(_prevPosition, NetworkPosition, alpha);
+                    transform.rotation = Quaternion.Slerp(_prevRotation, NetworkRotation, alpha);
+                }
             }
             else
             {

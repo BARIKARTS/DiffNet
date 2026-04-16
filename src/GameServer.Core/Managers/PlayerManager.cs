@@ -12,16 +12,16 @@ namespace GameServer.Core.Managers
         public void AddPlayer() => Interlocked.Increment(ref _ccu);
         public void RemovePlayer() => Interlocked.Decrement(ref _ccu);
         
-        // Bu metod admin panelinden çağrılacak
+        // This method will be called from the admin panel
         public bool KickPlayer(string playerId)
         {
-            // TODO: Mevcut bağlantıyı kesme mantığı entegre edilecek
+            // TODO: Logic for disconnecting the current connection will be integrated
             return true;
         }
 
         public void BroadcastMessage(string message)
         {
-            // TODO: Tüm oyunculara mesaj (paket) gönderme mantığı entegre edilecek
+            // TODO: Logic for sending messages (packets) to all players will be integrated
         }
     }
 }

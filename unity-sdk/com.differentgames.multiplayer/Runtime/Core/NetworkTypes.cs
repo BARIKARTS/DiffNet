@@ -3,8 +3,8 @@ using System;
 namespace DifferentGames.Multiplayer.Core
 {
     /// <summary>
-    /// Ağ üzerindeki bir oyuncuyu (veya bağlantıyı) temsil eden hafif bir anahtar tipi.
-    /// Struct olduğu için stack'te yaşar, GC baskısı oluşturmaz.
+    /// A lightweight key type representing a player (or connection) on the network.
+    /// Since it's a struct, it lives on the stack and doesn't create GC pressure.
     /// </summary>
     public readonly struct NetworkPlayerRef : IEquatable<NetworkPlayerRef>
     {
@@ -26,7 +26,7 @@ namespace DifferentGames.Multiplayer.Core
     }
 
     /// <summary>
-    /// Ağ üzerindeki benzersiz bir nesneyi tanımlayan ID.
+    /// ID identifying a unique object on the network.
     /// </summary>
     public readonly struct NetworkObjectId : IEquatable<NetworkObjectId>
     {
@@ -46,8 +46,8 @@ namespace DifferentGames.Multiplayer.Core
     }
 
     /// <summary>
-    /// Sunucu tarafından belirlenen global Tick sayacı.
-    /// Deterministik simülasyon için temel zaman birimi.
+    /// Global Tick counter determined by the server.
+    /// The fundamental time unit for deterministic simulation.
     /// </summary>
     public readonly struct NetworkTick : IEquatable<NetworkTick>, IComparable<NetworkTick>
     {
@@ -71,7 +71,7 @@ namespace DifferentGames.Multiplayer.Core
     }
 
     /// <summary>
-    /// SDK genelinde kullanılan teslim kanalı. Server tarafındaki DeliveryMode ile eşleşir.
+    /// Delivery channel used across the SDK. Matches DeliveryMode on the Server side.
     /// </summary>
     public enum DeliveryMode : byte
     {

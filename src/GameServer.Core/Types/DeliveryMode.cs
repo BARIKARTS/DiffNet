@@ -3,17 +3,17 @@ namespace GameServer.Core.Types
     public enum DeliveryMode : byte
     {
         /// <summary>
-        /// Sadece UDP ile gönderilir, onay beklenmez. Hızlı ve kayıplara dayanıklı veriler (örn: pozisyon güncellemeleri) için idealdir.
+        /// Sent only via UDP, no confirmation expected. Ideal for fast and loss-tolerant data (e.g., position updates).
         /// </summary>
         Unreliable = 0,
 
         /// <summary>
-        /// Karşı tarafa kesinlikle ulaştığından (ACK) emin olunur ancak paketlerin sırasıyla işlenmesi garanti edilmez.
+        /// Ensures that it definitely reaches the other party (ACK), but it is not guaranteed that the packets are processed in order.
         /// </summary>
         ReliableUnordered = 1,
 
         /// <summary>
-        /// Hem kesin gönderim (ACK) garantilidir hem de paketlerin gönderiliş sırasıyla teslim alınacağı (Ordering) garanti edilir.
+        /// Both guaranteed delivery (ACK) and that packets will be received in the order they were sent (Ordering) are guaranteed.
         /// </summary>
         ReliableOrdered = 2
     }

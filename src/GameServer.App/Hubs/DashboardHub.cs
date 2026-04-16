@@ -6,7 +6,7 @@ namespace GameServer.App.Hubs
     {
         public override Task OnConnectedAsync()
         {
-            // İsteğe bağlı olarak admin panele kimin bağlandığı loglanabilir
+            // Optionally, who is connected to the admin panel can be logged
             return base.OnConnectedAsync();
         }
 

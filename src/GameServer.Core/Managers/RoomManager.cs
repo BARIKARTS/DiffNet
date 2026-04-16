@@ -12,10 +12,10 @@ namespace GameServer.Core.Managers
         public void CreateRoom() => Interlocked.Increment(ref _activeRooms);
         public void RemoveRoom() => Interlocked.Decrement(ref _activeRooms);
 
-        // Bu metod admin panelinden çağrılacak
+        // This method will be called from the admin panel
         public bool CloseRoom(string roomId)
         {
-            // TODO: Belirtilen odayı kapatma mantığı entegre edilecek
+            // TODO: Logic for closing the specified room will be integrated
             return true;
         }
     }

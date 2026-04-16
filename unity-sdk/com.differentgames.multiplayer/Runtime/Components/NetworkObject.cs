@@ -3,32 +3,46 @@ using UnityEngine;
 namespace DifferentGames.Multiplayer.Components
 {
     /// <summary>
-    /// Her ağ nesnesi (Prefab) üzerinde bulunması gereken kimlik bileşeni.
-    /// Nesneyi ağda benzersiz kılan ObjectId ve sahiplik bilgisini tutar.
-    /// NetworkBehaviour bileşenleri bu nesneye ihtiyaç duyar.
+    /// Identity component that must be present on every network object (Prefab).
+    /// Holds the ObjectId and ownership info that makes the object unique on the network.
+    /// NetworkBehaviour components require this object.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class NetworkObject : MonoBehaviour
     {
         [SerializeField, HideInInspector]
-        private uint _prefabId; // Editor'da prefab'a atanan sabit kimlik
+        private uint _prefabId; // Immutable identity assigned to prefab in Editor
+
+        // ── Grid Interest Management (Zero-Allocation Linked List) ──
+        public Vector2Int CurrentGridCell { get; internal set; }
+        public NetworkObject PrevInGrid { get; internal set; }
+        public NetworkObject NextInGrid { get; internal set; }
+        public NetworkScoping Scoping { get; private set; }
+        // ────────────────────────────────────────────────────────────
 
         public NetworkObjectId ObjectId { get; internal set; } = NetworkObjectId.Invalid;
         public NetworkPlayerRef InputAuthority { get; internal set; } = NetworkPlayerRef.None;
         public NetworkRunner Runner { get; internal set; }
 
-        /// <summary>Bu nesnenin prefab referans kimliği (spawn için kullanılır).</summary>
+        /// <summary>
+        /// The tick in which this object was most recently updated by the server.
+        /// Used strictly by the Client to apply Interest Management Object Pooling (Disable/Enable).
+        /// </summary>
+        public NetworkTick LastReceivedSnapshotTick { get; internal set; } = NetworkTick.Invalid;
+
+        /// <summary>The prefab reference identity of this object (used for spawning).</summary>
         public uint PrefabId => _prefabId;
 
-        /// <summary>Tüm NetworkBehaviour bileşenlerini cache'ler.</summary>
+        /// <summary>Caches all NetworkBehaviour components.</summary>
         internal NetworkBehaviour[] Behaviours { get; private set; }
 
         private void Awake()
         {
             Behaviours = GetComponents<NetworkBehaviour>();
+            Scoping = GetComponent<NetworkScoping>();
         }
 
-        /// <summary>Runner bu nesneyi ilk kez spawn ettiğinde çağrılır.</summary>
+        /// <summary>Called when the Runner spawns this object for the first time.</summary>
         internal void NetworkInitialize(NetworkRunner runner, NetworkObjectId id, NetworkPlayerRef owner)
         {
             Runner = runner;
@@ -38,6 +52,7 @@ namespace DifferentGames.Multiplayer.Components
             foreach (var nb in Behaviours)
             {
                 nb.Runner = runner;
+                nb.InitializeStateHistory(runner.Config);
             }
         }
     }

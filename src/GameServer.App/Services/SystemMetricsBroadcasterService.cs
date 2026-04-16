@@ -42,7 +42,7 @@ namespace GameServer.App.Services
         {
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
             
-            // Son değerleri tutalım ki aradaki farkı (hızı/sn) bulabilelim
+            // Keep the last values so we can find the difference (speed/sec)
             long lastBytesIn = _networkMetrics.BytesIn;
             long lastBytesOut = _networkMetrics.BytesOut;
             long lastPacketsIn = _networkMetrics.PacketsIn;
@@ -52,7 +52,7 @@ namespace GameServer.App.Services
             {
                 try
                 {
-                    // 1. Ağ Metrikleri (Son 1 saniyedeki farklar hesaplanıp KB/s'e dönüştürülüyor)
+                    // 1. Network Metrics (Calculating differences from the last 1 second and converting to KB/s)
                     long currentBytesIn = _networkMetrics.BytesIn;
                     long currentBytesOut = _networkMetrics.BytesOut;
                     long currentPacketsIn = _networkMetrics.PacketsIn;
@@ -69,7 +69,7 @@ namespace GameServer.App.Services
                     lastPacketsIn = currentPacketsIn;
                     lastPacketsOut = currentPacketsOut;
 
-                    // 2. İşlemci Kullanımı Tahmini (% olarak)
+                    // 2. CPU Usage Estimation (as %)
                     var now = DateTime.UtcNow;
                     var cpuTime = _currentProcess.TotalProcessorTime;
                     var timeDelta = now - _lastCpuCheckTime;
@@ -78,21 +78,21 @@ namespace GameServer.App.Services
                     double cpuUsage = 0;
                     if (timeDelta.TotalMilliseconds > 0)
                     {
-                        // Basit CPU yüzdesi hesaplaması (Çok çekirdekli sistemler için proc count'a bölünebilir)
+                        // Simple CPU percentage calculation (can be divided by proc count for multi-core systems)
                         cpuUsage = (cpuDelta.TotalMilliseconds / timeDelta.TotalMilliseconds) * 100.0 / Environment.ProcessorCount;
                     }
 
                     _lastCpuCheckTime = now;
                     _lastCpuTotalProcessorTime = cpuTime;
 
-                    // 3. Bellek Durumu (MB) ve GC verileri
+                    // 3. Memory Status (MB) and GC data
                     _currentProcess.Refresh();
                     double memoryUsedMb = _currentProcess.WorkingSet64 / (1024.0 * 1024.0);
                     int gen0 = GC.CollectionCount(0);
                     int gen1 = GC.CollectionCount(1);
                     int gen2 = GC.CollectionCount(2);
 
-                    // 4. Veri Paketi Oluşturma
+                    // 4. Data Packet Creation
                     var metricsData = new
                     {
                         timestamp = now.ToString("HH:mm:ss"),
@@ -110,7 +110,7 @@ namespace GameServer.App.Services
                         gcGen2 = gen2
                     };
 
-                    // 5. SignalR üzerinden Frontend'e iletme
+                    // 5. Broadcoast to Frontend via SignalR
                     await _hubContext.Clients.All.SendAsync("ReceiveMetricsTick", metricsData, stoppingToken);
                 }
                 catch (Exception ex)

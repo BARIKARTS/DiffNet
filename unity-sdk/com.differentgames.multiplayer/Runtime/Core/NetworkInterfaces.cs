@@ -4,51 +4,51 @@ using UnityEngine;
 namespace DifferentGames.Multiplayer.Core
 {
     /// <summary>
-    /// NetworkRunner'ın her frame tetiklediği tick-based simülasyon arayüzü.
-    /// Unity'nin Update()'inden bağımsız olarak, deterministik bir döngü sağlar.
-    /// Geliştirici bu arayüzü implemente ederek ağ mantığını buraya yazar.
-    /// <para>Kullanım: NetworkBehaviour içinde override edilir.</para>
+    /// Tick-based simulation interface triggered by the NetworkRunner every frame.
+    /// Provides a deterministic loop independent of Unity's Update().
+    /// Developers write network logic here by implementing this interface.
+    /// <para>Usage: Overridden within NetworkBehaviour.</para>
     /// </summary>
     public interface INetworkSimulation
     {
         /// <summary>
-        /// Sunucudan gelen Tick numarasına göre çağrılır.
-        /// Tüm input okuma, state değiştirme ve ağ mantığı burada yazılmalıdır.
-        /// Unity'nin FixedUpdate'i gibi fakat deterministik ve ağ senkronize.
+        /// Called according to the Tick number from the server.
+        /// All input reading, state changes, and network logic should be written here.
+        /// Similar to Unity's FixedUpdate but deterministic and network-synchronized.
         /// </summary>
         void FixedUpdateNetwork();
 
         /// <summary>
-        /// Render frame'de çağrılır. Interpolasyon ve görsel güncelleme buraya yazılır.
-        /// State değiştirme yapılmamalıdır.
+        /// Called in the render frame. Interpolation and visual updates are written here.
+        /// State changes should not be performed.
         /// </summary>
         void Render();
     }
 
     /// <summary>
-    /// Bir ağ nesnesinin sahiplenme ve durum bilgisini taşıyan arayüz.
+    /// Interface carrying ownership and state information of a network object.
     /// </summary>
     public interface INetworkState
     {
-        /// <summary>Bu nesnenin ağdaki benzersiz kimliği.</summary>
+        /// <summary>Unique identity of this object on the network.</summary>
         NetworkObjectId ObjectId { get; }
 
-        /// <summary>Bu nesneyi kimin sahiplendiği (Owner).</summary>
+        /// <summary>Who owns this object (Owner).</summary>
         NetworkPlayerRef InputAuthority { get; }
 
-        /// <summary>Bu nesne yapay zeka/sunucu tarafından mı kontrol ediliyor?</summary>
+        /// <summary>Is this object controlled by AI/server?</summary>
         bool HasStateAuthority { get; }
 
-        /// <summary>Bu nesne yerel istemciye mi ait?</summary>
+        /// <summary>Does this object belong to the local client?</summary>
         bool HasInputAuthority { get; }
 
-        /// <summary>Nesnenin bağlı olduğu tick. Henüz bağlanmadıysa 0.</summary>
+        /// <summary>The tick the object is connected to. 0 if not yet connected.</summary>
         NetworkTick CurrentTick { get; }
     }
 
     /// <summary>
-    /// Ağ olayları için callback arayüzü.
-    /// NetworkRunner tarafından çağrılır.
+    /// Callback interface for network events.
+    /// Called by the NetworkRunner.
     /// </summary>
     public interface INetworkCallbacks
     {
@@ -56,11 +56,12 @@ namespace DifferentGames.Multiplayer.Core
         void OnPlayerLeft(NetworkPlayerRef player) { }
         void OnConnectedToServer(NetworkPlayerRef localPlayer) { }
         void OnDisconnectedFromServer() { }
+        void OnProvideInput(NetworkRunner runner, NetworkInputProvider input) { }
         void OnShutdown() { }
     }
 
     /// <summary>
-    /// RPC gönderim bilgisi. Gönderen tarafı ve güvenilirlik bilgisi taşır.
+    /// RPC transmission info. Carries the sender and reliability information.
     /// </summary>
     public readonly struct RpcInfo
     {
