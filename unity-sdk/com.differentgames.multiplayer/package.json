@@ -1,0 +1,20 @@
+{
+  "name": "com.differentgames.multiplayer",
+  "version": "0.1.0",
+  "displayName": "DifferentGames Multiplayer SDK",
+  "description": "A high-performance, RUDP-based multiplayer networking SDK for Unity with zero-allocation design principles, Attribute-driven API, and deterministic Tick simulation.",
+  "unity": "2022.3",
+  "unityRelease": "0f1",
+  "author": {
+    "name": "DifferentGames",
+    "email": "contact@differentgames.com"
+  },
+  "keywords": [
+    "networking",
+    "multiplayer",
+    "udp",
+    "rudp",
+    "gameserver"
+  ],
+  "dependencies": {}
+}

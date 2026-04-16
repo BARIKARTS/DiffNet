@@ -1,0 +1,11 @@
+C:\Users\berka\OneDrive\Masaüstü\Denemelik projeler\GameServer\src\GameServer.Core\bin\Debug\net8.0\GameServer.Core.deps.json
+C:\Users\berka\OneDrive\Masaüstü\Denemelik projeler\GameServer\src\GameServer.Core\bin\Debug\net8.0\GameServer.Core.dll
+C:\Users\berka\OneDrive\Masaüstü\Denemelik projeler\GameServer\src\GameServer.Core\bin\Debug\net8.0\GameServer.Core.pdb
+C:\Users\berka\OneDrive\Masaüstü\Denemelik projeler\GameServer\src\GameServer.Core\obj\Debug\net8.0\GameServer.Core.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\berka\OneDrive\Masaüstü\Denemelik projeler\GameServer\src\GameServer.Core\obj\Debug\net8.0\GameServer.Core.AssemblyInfoInputs.cache
+C:\Users\berka\OneDrive\Masaüstü\Denemelik projeler\GameServer\src\GameServer.Core\obj\Debug\net8.0\GameServer.Core.AssemblyInfo.cs
+C:\Users\berka\OneDrive\Masaüstü\Denemelik projeler\GameServer\src\GameServer.Core\obj\Debug\net8.0\GameServer.Core.csproj.CoreCompileInputs.cache
+C:\Users\berka\OneDrive\Masaüstü\Denemelik projeler\GameServer\src\GameServer.Core\obj\Debug\net8.0\GameServer.Core.dll
+C:\Users\berka\OneDrive\Masaüstü\Denemelik projeler\GameServer\src\GameServer.Core\obj\Debug\net8.0\refint\GameServer.Core.dll
+C:\Users\berka\OneDrive\Masaüstü\Denemelik projeler\GameServer\src\GameServer.Core\obj\Debug\net8.0\GameServer.Core.pdb
+C:\Users\berka\OneDrive\Masaüstü\Denemelik projeler\GameServer\src\GameServer.Core\obj\Debug\net8.0\ref\GameServer.Core.dll

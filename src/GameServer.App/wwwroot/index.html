@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Server | LiveOps Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind Config for Custom Colors -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        dark: '#0b0e14',
+                        card: 'rgba(20, 25, 35, 0.6)'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="antialiased min-h-screen text-slate-200">
+    <!-- Navbar -->
+    <nav class="glass-panel sticky top-0 z-40 px-6 py-4 flex justify-between items-center border-b border-white/5">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <i class="fa-solid fa-server text-white text-lg"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
+                    Nexus Core
+                </h1>
+                <p class="text-xs text-slate-400 font-medium tracking-wide">LIVEOPS DASHBOARD</p>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 bg-black/30 px-3 py-1.5 rounded-full border border-white/5">
+                <div id="status-dot" class="w-3 h-3 rounded-full bg-yellow-400 live-indicator"></div>
+                <span id="status-text" class="text-sm text-yellow-400 font-medium tracking-wider uppercase">Connecting</span>
+            </div>
+            <div class="text-xs text-slate-500 bg-black/30 px-3 py-1.5 rounded-full border border-white/5">
+                <i class="fa-regular fa-clock mr-1"></i> <span id="val-timestamp">--:--:--</span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-6 py-8">
+        <!-- Live Metrics Grid -->
+        <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-chart-line text-blue-400"></i> Real-time Metrics
+        </h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+            <!-- CCU Card -->
+            <div class="stat-card glass-panel rounded-2xl p-5 relative overflow-hidden group">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-all group-hover:bg-blue-500/20"></div>
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-sm text-slate-400 font-medium mb-1">Online Players (CCU)</p>
+                        <h3 class="text-4xl font-bold text-white drop-shadow-md" id="val-ccu">0</h3>
+                    </div>
+                    <div class="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
+                        <i class="fa-solid fa-users text-blue-400"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rooms Card -->
+            <div class="stat-card glass-panel rounded-2xl p-5 relative overflow-hidden group">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-all group-hover:bg-purple-500/20"></div>
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-sm text-slate-400 font-medium mb-1">Active Rooms</p>
+                        <h3 class="text-4xl font-bold text-white drop-shadow-md" id="val-rooms">0</h3>
+                    </div>
+                    <div class="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center border border-purple-500/30">
+                        <i class="fa-solid fa-gamepad text-purple-400"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bandwidth Card -->
+            <div class="stat-card glass-panel rounded-2xl p-5 relative overflow-hidden group lg:col-span-2">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-all group-hover:bg-emerald-500/20"></div>
+                
+                <div class="flex justify-between items-start mb-2">
+                    <p class="text-sm text-slate-400 font-medium">Network Traffic</p>
+                    <div class="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30">
+                        <i class="fa-solid fa-network-wired text-emerald-400"></i>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-xs text-slate-500 uppercase tracking-wide">Inbound</p>
+                        <div class="flex items-end gap-2">
+                            <h3 class="text-2xl font-bold text-white" id="val-bw-in">0.00 KB/s</h3>
+                            <span class="text-xs text-slate-400 mb-1" id="val-packets-in">(0 p/s)</span>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500 uppercase tracking-wide">Outbound</p>
+                        <div class="flex items-end gap-2">
+                            <h3 class="text-2xl font-bold text-white" id="val-bw-out">0.00 KB/s</h3>
+                            <span class="text-xs text-slate-400 mb-1" id="val-packets-out">(0 p/s)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System & Hardware & Admin Controls -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Hardware Specs -->
+            <div class="glass-panel rounded-2xl p-6 lg:col-span-1 border-t-2 border-t-indigo-500">
+                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-microchip text-indigo-400"></i> Hardware Load
+                </h3>
+                
+                <div class="space-y-5">
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <span class="text-sm text-slate-400">CPU Usage</span>
+                            <span class="text-sm font-bold text-white" id="val-cpu">0%</span>
+                        </div>
+                        <div class="w-full bg-black/50 rounded-full h-2">
+                            <div class="bg-gradient-to-r from-blue-500 to-indigo-500 h-2 rounded-full" style="width: 45%" id="bar-cpu"></div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <span class="text-sm text-slate-400">Memory (RAM)</span>
+                            <span class="text-sm font-bold text-white" id="val-mem">0 MB</span>
+                        </div>
+                        <div class="w-full bg-black/50 rounded-full h-2">
+                            <div class="bg-gradient-to-r from-emerald-400 to-teal-500 h-2 rounded-full" style="width: 30%"></div>
+                        </div>
+                    </div>
+
+                    <div class="pt-4 border-t border-white/5">
+                        <p class="text-xs text-slate-500 uppercase tracking-wider mb-3">Garbage Collector (Allocations)</p>
+                        <div class="flex justify-between text-center gap-2">
+                            <div class="bg-black/40 rounded-lg p-2 flex-1 border border-white/5">
+                                <p class="text-xs text-slate-400">Gen 0</p>
+                                <p class="text-lg font-medium text-white" id="val-gen0">0</p>
+                            </div>
+                            <div class="bg-black/40 rounded-lg p-2 flex-1 border border-white/5">
+                                <p class="text-xs text-slate-400">Gen 1</p>
+                                <p class="text-lg font-medium text-white" id="val-gen1">0</p>
+                            </div>
+                            <div class="bg-black/40 rounded-lg p-2 flex-1 border border-white/5">
+                                <p class="text-xs text-slate-400">Gen 2</p>
+                                <p class="text-lg font-medium text-white" id="val-gen2">0</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Actions -->
+            <div class="glass-panel rounded-2xl p-6 lg:col-span-2 border-t-2 border-t-rose-500">
+                <div class="flex justify-between items-start mb-6">
+                    <div>
+                        <h3 class="text-lg font-semibold flex items-center gap-2">
+                            <i class="fa-solid fa-bolt text-rose-400"></i> LiveOps Actions
+                        </h3>
+                        <p class="text-sm text-slate-400 mt-1">Execute real-time commands on the game server.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="actionStartServer()" id="btn-start" class="px-3 py-1.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded-lg text-sm font-medium hover:bg-green-500/30 transition-colors hidden">
+                            <i class="fa-solid fa-play mr-1"></i> Start
+                        </button>
+                        <button onclick="actionStopServer()" id="btn-stop" class="px-3 py-1.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-sm font-medium hover:bg-red-500/30 transition-colors">
+                            <i class="fa-solid fa-stop mr-1"></i> Stop
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <button onclick="actionKick()" class="group relative overflow-hidden rounded-xl bg-gradient-to-br from-rose-600/20 to-rose-900/20 border border-rose-500/30 p-4 transition-all hover:border-rose-500/60 hover:shadow-[0_0_20px_rgba(225,29,72,0.2)] text-left flex flex-col items-start gap-3">
+                        <div class="w-10 h-10 rounded-full bg-rose-500/20 flex items-center justify-center text-rose-400 group-hover:scale-110 transition-transform">
+                            <i class="fa-solid fa-user-slash"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-white">Kick Player</h4>
+                            <p class="text-xs text-rose-200/60 mt-1">Disconnects a specific player</p>
+                        </div>
+                    </button>
+
+                    <button onclick="actionCloseRoom()" class="group relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-600/20 to-amber-900/20 border border-amber-500/30 p-4 transition-all hover:border-amber-500/60 hover:shadow-[0_0_20px_rgba(217,119,6,0.2)] text-left flex flex-col items-start gap-3">
+                        <div class="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform">
+                            <i class="fa-solid fa-power-off"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-white">Close Room</h4>
+                            <p class="text-xs text-amber-200/60 mt-1">Force terminates a match</p>
+                        </div>
+                    </button>
+
+                    <button onclick="actionBroadcast()" class="group relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-600/20 to-blue-900/20 border border-blue-500/30 p-4 transition-all hover:border-blue-500/60 hover:shadow-[0_0_20px_rgba(59,130,246,0.2)] text-left flex flex-col items-start gap-3">
+                        <div class="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                            <i class="fa-solid fa-bullhorn"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-white">Broadcast</h4>
+                            <p class="text-xs text-blue-200/60 mt-1">Send a global server msg</p>
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Toast Notifications Container -->
+    <div id="toast-container"></div>
+
+    <!-- SignalR Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    <!-- Custom JS -->
+    <script src="/js/app.js"></script>
+</body>
+</html>

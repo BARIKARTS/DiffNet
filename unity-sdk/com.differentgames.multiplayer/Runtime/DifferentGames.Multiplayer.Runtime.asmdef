@@ -1,0 +1,17 @@
+/// <summary>
+/// DifferentGames Multiplayer SDK - Assembly definition for the Runtime module.
+/// </summary>
+{
+  "name": "DifferentGames.Multiplayer.Runtime",
+  "rootNamespace": "DifferentGames.Multiplayer",
+  "references": [],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
