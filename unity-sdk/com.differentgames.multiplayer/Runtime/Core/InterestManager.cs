@@ -195,6 +195,27 @@ namespace DifferentGames.Multiplayer.Core
         }
         
         /// <summary>
+        /// Check if the object just exited the player's view this exact tick.
+        /// If so, we must send a Despawn packet to the client.
+        /// </summary>
+        public bool JustExited(NetworkPlayerRef player, NetworkObject obj)
+        {
+            if (!_config.EnableAOI) return false;
+            if (obj.Scoping == null || obj.Scoping.Mode != ScopingMode.Spatial) return false;
+
+            if (_currentVisibility.TryGetValue(player, out var currentBits) &&
+                _previousVisibility.TryGetValue(player, out var prevBits))
+            {
+                uint id = obj.ObjectId.Value;
+                bool isNowVisible = GetBit(currentBits, id);
+                bool wasVisible   = GetBit(prevBits, id);
+
+                return !isNowVisible && wasVisible;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Check if the object just entered the view this exact tick.
         /// If so, we must forcefully send a Full Delta (bypass baseline diffing).
         /// </summary>

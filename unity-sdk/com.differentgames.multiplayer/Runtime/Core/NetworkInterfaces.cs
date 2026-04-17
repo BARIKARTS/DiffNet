@@ -58,6 +58,18 @@ namespace DifferentGames.Multiplayer.Core
         void OnDisconnectedFromServer() { }
         void OnProvideInput(NetworkRunner runner, NetworkInputProvider input) { }
         void OnShutdown() { }
+
+        /// <summary>
+        /// Called on the client when a new NetworkObject is instantiated
+        /// due to entering the local player's Area of Interest (or initial connect).
+        /// </summary>
+        void OnObjectSpawned(Components.NetworkObject netObj) { }
+
+        /// <summary>
+        /// Called on the client just before a NetworkObject is destroyed
+        /// due to leaving the local player's Area of Interest.
+        /// </summary>
+        void OnObjectDespawned(Components.NetworkObject netObj) { }
     }
 
     /// <summary>

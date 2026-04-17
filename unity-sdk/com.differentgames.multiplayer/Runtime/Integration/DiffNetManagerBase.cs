@@ -32,7 +32,7 @@ namespace DifferentGames.Multiplayer.Integration
             {
                 var spawnPos = GetSpawnPosition(player);
                 var netObj = Runner.Spawn(PlayerPrefab, spawnPos, Quaternion.identity, player);
-                
+
                 // Set the anchor for Area of Interest calculations
                 Runner.SetPlayerAnchor(player, netObj);
             }
@@ -43,6 +43,18 @@ namespace DifferentGames.Multiplayer.Integration
         public virtual void OnDisconnectedFromServer() { }
         public virtual void OnProvideInput(NetworkRunner runner, NetworkInputProvider input) { }
         public virtual void OnShutdown() { }
+
+        /// <summary>
+        /// Client: Called when a NetworkObject enters the local player's Area of Interest.
+        /// Override to show nametags, spawn VFX, register minimap icons, etc.
+        /// </summary>
+        public virtual void OnObjectSpawned(Components.NetworkObject netObj) { }
+
+        /// <summary>
+        /// Client: Called just before a NetworkObject is destroyed for leaving the local AOI.
+        /// Override to clean up nametags, pooled UI, audio sources, etc.
+        /// </summary>
+        public virtual void OnObjectDespawned(Components.NetworkObject netObj) { }
 
         /// <summary>
         /// Defines where the player should spawn. Can be overridden for custom logic.

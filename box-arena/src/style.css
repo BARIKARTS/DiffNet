@@ -1,0 +1,180 @@
+/* ── Base ──────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background: #0d1117;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    overflow: hidden;
+    color: #e6edf3;
+}
+
+#app {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* ── Canvas ────────────────────────────────────────────────────────────────── */
+#gameCanvas {
+    display: block;
+    position: absolute;
+    inset: 0;
+}
+
+/* ── HUD ─────────────────────────────────────────────────────────────────── */
+#hud {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 10;
+    pointer-events: none;
+}
+
+#status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(13, 17, 23, 0.85);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    backdrop-filter: blur(8px);
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.dot--disconnected { background: #e74c3c; box-shadow: 0 0 6px #e74c3c; }
+.dot--connecting   { background: #f39c12; box-shadow: 0 0 6px #f39c12; animation: pulse 0.8s infinite alternate; }
+.dot--connected    { background: #2ecc71; box-shadow: 0 0 6px #2ecc71; }
+
+@keyframes pulse { from { opacity: 0.5; } to { opacity: 1; } }
+
+#stats {
+    display: grid;
+    grid-template-columns: repeat(5, auto);
+    gap: 4px 12px;
+    background: rgba(13, 17, 23, 0.85);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 8px 14px;
+    backdrop-filter: blur(8px);
+}
+
+.stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.stat .label {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(255,255,255,0.35);
+    margin-bottom: 2px;
+}
+.stat span:last-child {
+    font-size: 14px;
+    font-weight: 700;
+    color: #58a6ff;
+}
+
+/* ── Event Log ───────────────────────────────────────────────────────────── */
+#eventLog {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-width: 340px;
+}
+
+.log-line {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border-left: 3px solid transparent;
+    background: rgba(13, 17, 23, 0.8);
+    backdrop-filter: blur(4px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    animation: fadeIn 0.2s ease;
+}
+
+.log-line--spawn   { border-color: #2ecc71; color: #a3f7c0; }
+.log-line--despawn { border-color: #e74c3c; color: #f5a5a5; }
+.log-line--info    { border-color: #58a6ff; color: rgba(255,255,255,0.55); }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── Connect Panel ───────────────────────────────────────────────────────── */
+#connectPanel {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: radial-gradient(ellipse at center, rgba(88,166,255,0.07) 0%, transparent 70%),
+                rgba(13, 17, 23, 0.92);
+    backdrop-filter: blur(12px);
+    z-index: 20;
+}
+
+#connectPanel h2 {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #58a6ff;
+    text-shadow: 0 0 40px rgba(88,166,255,0.4);
+}
+
+#connectPanel p {
+    font-size: 13px;
+    color: rgba(255,255,255,0.45);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+
+#serverUrl {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    color: #e6edf3;
+    font-family: inherit;
+    font-size: 13px;
+    padding: 10px 16px;
+    width: 300px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+#serverUrl:focus { border-color: #58a6ff; }
+
+#connectBtn {
+    background: linear-gradient(135deg, #1f6feb 0%, #0d419d 100%);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 12px 32px;
+    transition: opacity 0.2s, transform 0.1s;
+}
+#connectBtn:hover  { opacity: 0.88; transform: translateY(-1px); }
+#connectBtn:active { transform: translateY(0); }
+#connectBtn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+#connectHint {
+    font-size: 11px;
+    color: rgba(255,255,255,0.25);
+}

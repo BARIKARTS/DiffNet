@@ -33,6 +33,11 @@ namespace DifferentGames.Multiplayer.Components
         /// <summary>The prefab reference identity of this object (used for spawning).</summary>
         public uint PrefabId => _prefabId;
 
+        /// <summary>
+        /// Stamps the prefab ID at runtime (called by NetworkRunner during client-side Spawn packet handling).
+        /// </summary>
+        internal void InternalSetPrefabId(uint id) => _prefabId = id;
+
         /// <summary>Caches all NetworkBehaviour components.</summary>
         internal NetworkBehaviour[] Behaviours { get; private set; }
 

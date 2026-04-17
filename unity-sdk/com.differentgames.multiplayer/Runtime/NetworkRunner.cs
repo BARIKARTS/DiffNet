@@ -87,6 +87,20 @@ namespace DifferentGames.Multiplayer
         private readonly Dictionary<NetworkPlayerRef, NetworkObject> _playerAnchors = new();
         private uint _nextObjectId = 1;
 
+        // ── Prefab Registry & Per-Player Spawn Tracking ───────────────────────
+
+        [Header("Prefab Registry")]
+        [Tooltip("All NetworkObject prefabs for this session. Index+1 = prefabId. Must be identical on Server and all Clients.")]
+        [SerializeField] private List<GameObject> _networkPrefabs = new();
+
+        // Maps prefabId (1-based list index) → prefab GameObject for fast O(1) lookup
+        private readonly Dictionary<uint, GameObject> _prefabRegistry = new();
+
+        // Tracks which ObjectIds each player has received a Spawn (0x04) packet for.
+        //   Global/OwnerOnly objects: added once at object-creation or player-connect time.
+        //   Spatial objects: added/removed each tick by SendLifecyclePackets when crossing AOI boundary.
+        private readonly Dictionary<NetworkPlayerRef, HashSet<NetworkObjectId>> _spawnedForPlayer = new();
+
         // UDP transport (simple wrapper - RUDP adapter would be integrated in a real project)
         private UdpClient _udpClient;
         private IPEndPoint _serverEndPoint;
@@ -118,6 +132,8 @@ namespace DifferentGames.Multiplayer
             LocalTick = new NetworkTick(0);
             InputBuffer = new Core.NetworkInputBuffer(_config.StateHistorySize);
             _interestManager = new InterestManager(this, _config, _playerAnchors);
+            BuildPrefabRegistry();
+            _spawnedForPlayer.Clear();
 
             _callbacks = _callbacksTarget as INetworkCallbacks;
             _callbacks?.OnConnectedToServer(LocalPlayer);
@@ -145,6 +161,7 @@ namespace DifferentGames.Multiplayer
             IsRunning = true;
             InputBuffer = new Core.NetworkInputBuffer(_config.StateHistorySize);
             _callbacks = _callbacksTarget as INetworkCallbacks;
+            BuildPrefabRegistry(); // Client also needs the registry for HandleSpawnPacket
 
             // Send "Connect" request to the server
             SendConnectRequest();
@@ -196,14 +213,23 @@ namespace DifferentGames.Multiplayer
                 return null;
             }
 
-            var id = new NetworkObjectId(_nextObjectId++);
+            var id    = new NetworkObjectId(_nextObjectId++);
             var owner = inputAuthority.IsNone ? LocalPlayer : inputAuthority;
+
+            // Stamp the prefabId so Spawn packets can tell clients what to Instantiate
+            uint prefabId = GetPrefabIdFromRegistry(prefab);
+            netObj.InternalSetPrefabId(prefabId);
             netObj.NetworkInitialize(this, id, owner);
             _spawnedObjects[id] = netObj;
 
             _interestManager?.AddObject(netObj);
 
-            Debug.Log($"[NetworkRunner] Spawned {prefab.name} → {id} (owner: {owner})");
+            // Immediately notify connected players for Global and OwnerOnly objects.
+            // Spatial objects are picked up lazily next tick by SendLifecyclePackets.
+            var scopingMode = netObj.Scoping?.Mode ?? ScopingMode.Global;
+            NotifyPlayersOfNewSpawn(netObj, owner, scopingMode);
+
+            Debug.Log($"[NetworkRunner] Spawned {prefab.name} → {id} (owner: {owner}, prefabId: {prefabId})");
             return netObj;
         }
 
@@ -321,12 +347,19 @@ namespace DifferentGames.Multiplayer
                     _interestManager?.UpdateObjectPosition(netObj);
                 }
 
-                // Record state and send
+                // Record state to history for Delta Compression baseline
                 foreach (var netObj in _spawnedObjects.Values)
                     foreach (var nb in netObj.Behaviours)
                         nb.RecordCurrentState();
-                        
-                SendSnapshots();
+
+                // Update visibility BitSets for ALL players based on this tick's positions.
+                // This MUST happen before SendLifecyclePackets so JustEntered/JustExited is accurate.
+                if (_interestManager != null)
+                    foreach (var player in _playerEndpoints.Keys)
+                        _interestManager.UpdateVisibilityForPlayer(player, (int)_nextObjectId);
+
+                SendLifecyclePackets(); // Spawn/Despawn notifications for AOI boundary crossings
+                SendSnapshots();        // Delta state — only for objects already Spawned to each player
             }
             else
             {
@@ -401,23 +434,21 @@ namespace DifferentGames.Multiplayer
                 writer.WriteInt(CurrentTick.Value);
                 writer.WriteInt(baselineTick.Value);  // Server informs client about diff-baseline
 
-                // 1. Grid-based Visibility Generation for this Frame
-                if (IsServer) _interestManager?.UpdateVisibilityForPlayer(targetPlayer, (int)_nextObjectId);
+                // Only serialize state for objects this player has already received a Spawn packet for.
+                // Visibility is pre-computed in SimulateTick; lifecycle packets handle enter/exit.
+                _spawnedForPlayer.TryGetValue(targetPlayer, out var spawnedSet);
 
-                // Write all visible objects into the single packet
-                // (In production, you'd chunk this if over MTU of 1200 bytes)
                 foreach (var netObj in _spawnedObjects.Values)
                 {
-                    if (_interestManager != null && !_interestManager.IsVisible(targetPlayer, netObj))
-                    {
-                        continue; // Culled by Area of Interest / Scoping rules
-                    }
+                    // Skip objects not yet registered in this player's active spawn set
+                    if (spawnedSet != null && !spawnedSet.Contains(netObj.ObjectId)) continue;
 
-                    // Check if object JUST entered the AOI
+                    // If the object JUST entered the AOI this tick, bypass Delta compression:
+                    // send a Full Snapshot so the client establishes a valid baseline immediately.
                     NetworkTick objectBaseline = baselineTick;
                     if (_interestManager != null && _interestManager.JustEntered(targetPlayer, netObj))
                     {
-                        objectBaseline = NetworkTick.Invalid; // Forces a FULL Delta state (Bypasses diff tracking)
+                        objectBaseline = NetworkTick.Invalid;
                     }
 
                     writer.WriteInt((int)netObj.ObjectId.Value);
@@ -478,6 +509,14 @@ namespace DifferentGames.Multiplayer
                         HandleRpc(ref reader, remote);
                         break;
 
+                    case 0x04: // SpawnObject — client instantiates a new NetworkObject entering its AOI
+                        if (!IsServer) HandleSpawnPacket(ref reader);
+                        break;
+
+                    case 0x05: // DespawnObject — client destroys a NetworkObject leaving its AOI
+                        if (!IsServer) HandleDespawnPacket(ref reader);
+                        break;
+
                     default:
                         Debug.LogWarning($"[NetworkRunner] Unknown packet type: {packetType}");
                         break;
@@ -504,6 +543,11 @@ namespace DifferentGames.Multiplayer
             var playerId = new NetworkPlayerRef(_playerEndpoints.Count + 1);
             _playerEndpoints[playerId] = remote;
             _playerAckedTicks[playerId] = new NetworkTick(0);
+            _spawnedForPlayer[playerId] = new HashSet<NetworkObjectId>();
+
+            // Immediately send Spawn packets for all currently active Global and OwnerOnly objects.
+            // Spatial objects will be picked up by SendLifecyclePackets next tick.
+            SendInitialSpawnPackets(playerId, remote);
 
             Debug.Log($"[NetworkRunner] Player joined: {playerId} from {remote} with Valid Contract");
             _callbacks?.OnPlayerJoined(playerId);
@@ -604,6 +648,213 @@ namespace DifferentGames.Multiplayer
 
             var packet = writer.ToSpan().ToArray();
             _udpClient?.Send(packet, packet.Length, _serverEndPoint);
+        }
+
+        // ── Spawn / Despawn Protocol ─────────────────────────────────────────
+
+        private void BuildPrefabRegistry()
+        {
+            _prefabRegistry.Clear();
+            for (int i = 0; i < _networkPrefabs.Count; i++)
+                if (_networkPrefabs[i] != null)
+                    _prefabRegistry[(uint)(i + 1)] = _networkPrefabs[i];
+
+            Debug.Log($"[NetworkRunner] Prefab registry: {_prefabRegistry.Count} entries.");
+        }
+
+        private uint GetPrefabIdFromRegistry(GameObject prefab)
+        {
+            for (int i = 0; i < _networkPrefabs.Count; i++)
+                if (_networkPrefabs[i] == prefab) return (uint)(i + 1);
+
+            Debug.LogWarning($"[NetworkRunner] Prefab '{prefab.name}' is not in the Prefab Registry! Add it to NetworkRunner._networkPrefabs list.");
+            return 0;
+        }
+
+        /// <summary>
+        /// Proactively sends Spawn packets to already-connected players when a new object spawns.
+        /// Global → all players. OwnerOnly → only the owner. Spatial → skipped (handled per-tick).
+        /// </summary>
+        private void NotifyPlayersOfNewSpawn(NetworkObject netObj, NetworkPlayerRef owner, ScopingMode scopingMode)
+        {
+            if (scopingMode == ScopingMode.Spatial) return;
+
+            foreach (var kvp in _playerEndpoints)
+            {
+                var player = kvp.Key;
+                var ep     = kvp.Value;
+
+                if (!_spawnedForPlayer.TryGetValue(player, out var knownObjects)) continue;
+                if (knownObjects.Contains(netObj.ObjectId)) continue;
+
+                bool shouldSend = scopingMode == ScopingMode.Global ||
+                                  (scopingMode == ScopingMode.OwnerOnly && player == owner);
+
+                if (shouldSend)
+                {
+                    SendSpawnPacket(netObj, ep);
+                    knownObjects.Add(netObj.ObjectId);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Sends Spawn packets for all currently active Global and OwnerOnly objects
+        /// to a player who just connected. Spatial objects are picked up next tick.
+        /// </summary>
+        private void SendInitialSpawnPackets(NetworkPlayerRef player, IPEndPoint ep)
+        {
+            if (!_spawnedForPlayer.TryGetValue(player, out var knownObjects)) return;
+
+            foreach (var netObj in _spawnedObjects.Values)
+            {
+                var mode = netObj.Scoping?.Mode ?? ScopingMode.Global;
+
+                bool send = mode == ScopingMode.Global ||
+                            (mode == ScopingMode.OwnerOnly && netObj.InputAuthority == player);
+
+                if (send && !knownObjects.Contains(netObj.ObjectId))
+                {
+                    SendSpawnPacket(netObj, ep);
+                    knownObjects.Add(netObj.ObjectId);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Called each server tick BEFORE SendSnapshots.
+        /// Sends Spawn (0x04) for Spatial objects entering a player's AOI,
+        /// and Despawn (0x05) for Spatial objects exiting it.
+        /// </summary>
+        private void SendLifecyclePackets()
+        {
+            if (_interestManager == null) return;
+
+            foreach (var kvp in _playerEndpoints)
+            {
+                var player = kvp.Key;
+                var ep     = kvp.Value;
+
+                if (!_spawnedForPlayer.TryGetValue(player, out var knownObjects)) continue;
+
+                foreach (var netObj in _spawnedObjects.Values)
+                {
+                    if (netObj.Scoping?.Mode != ScopingMode.Spatial) continue;
+
+                    bool isKnown     = knownObjects.Contains(netObj.ObjectId);
+                    bool justEntered = _interestManager.JustEntered(player, netObj);
+                    bool justExited  = _interestManager.JustExited(player, netObj);
+
+                    if (!isKnown && justEntered)
+                    {
+                        SendSpawnPacket(netObj, ep);
+                        knownObjects.Add(netObj.ObjectId);
+                    }
+                    else if (isKnown && justExited)
+                    {
+                        SendDespawnPacket(netObj, ep);
+                        knownObjects.Remove(netObj.ObjectId);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Packet 0x04 Spawn — tells the client to Instantiate a new NetworkObject.
+        /// Layout: [0x04][objectId:4][prefabId:4][ownerId:4][pos:12][rot:7] ≈ 32 bytes
+        /// </summary>
+        private unsafe void SendSpawnPacket(NetworkObject netObj, IPEndPoint ep)
+        {
+            Span<byte> buffer = stackalloc byte[64];
+            var writer = new NetworkWriter(buffer);
+            writer.WriteByte(0x04);
+            writer.WriteUInt(netObj.ObjectId.Value);
+            writer.WriteUInt(netObj.PrefabId);
+            writer.WriteInt(netObj.InputAuthority.Id);
+            writer.WriteVector3(netObj.transform.position);
+            writer.WriteQuaternionCompressed(netObj.transform.rotation);
+
+            var data = writer.ToSpan().ToArray();
+            _udpClient?.Send(data, data.Length, ep);
+        }
+
+        /// <summary>
+        /// Packet 0x05 Despawn — tells the client to Destroy a NetworkObject leaving its AOI.
+        /// Layout: [0x05][objectId:4] = 5 bytes
+        /// </summary>
+        private unsafe void SendDespawnPacket(NetworkObject netObj, IPEndPoint ep)
+        {
+            Span<byte> buffer = stackalloc byte[8];
+            var writer = new NetworkWriter(buffer);
+            writer.WriteByte(0x05);
+            writer.WriteUInt(netObj.ObjectId.Value);
+
+            var data = writer.ToSpan().ToArray();
+            _udpClient?.Send(data, data.Length, ep);
+        }
+
+        /// <summary>
+        /// Client-side: Handles packet 0x04 (SpawnObject).
+        /// Instantiates a new NetworkObject from the prefab registry at the given transform.
+        /// </summary>
+        private unsafe void HandleSpawnPacket(ref NetworkReader reader)
+        {
+            uint       objectId = reader.ReadUInt();
+            uint       prefabId = reader.ReadUInt();
+            int        ownerId  = reader.ReadInt();
+            Vector3    pos      = reader.ReadVector3();
+            Quaternion rot      = reader.ReadQuaternionCompressed();
+
+            var netId = new NetworkObjectId(objectId);
+
+            // Already know this object? Reactivate and reposition (handles duplicate/reconnect)
+            if (_spawnedObjects.TryGetValue(netId, out var existing))
+            {
+                existing.transform.SetPositionAndRotation(pos, rot);
+                existing.gameObject.SetActive(true);
+                return;
+            }
+
+            if (!_prefabRegistry.TryGetValue(prefabId, out var prefab))
+            {
+                Debug.LogWarning($"[NetworkRunner] Spawn packet: Unknown prefabId={prefabId}. Is it in the Prefab Registry?");
+                return;
+            }
+
+            var go     = Instantiate(prefab, pos, rot);
+            var netObj = go.GetComponent<NetworkObject>();
+
+            if (netObj == null)
+            {
+                Debug.LogError("[NetworkRunner] Spawned prefab has no NetworkObject component!");
+                Destroy(go);
+                return;
+            }
+
+            netObj.InternalSetPrefabId(prefabId);
+            netObj.NetworkInitialize(this, netId, new NetworkPlayerRef(ownerId));
+            _spawnedObjects[netId] = netObj;
+
+            _callbacks?.OnObjectSpawned(netObj);
+            Debug.Log($"[NetworkRunner] Client: Instantiated object {netId} (prefabId={prefabId})");
+        }
+
+        /// <summary>
+        /// Client-side: Handles packet 0x05 (DespawnObject).
+        /// Destroys the NetworkObject that has exited the local player's Area of Interest.
+        /// </summary>
+        private void HandleDespawnPacket(ref NetworkReader reader)
+        {
+            uint objectId = reader.ReadUInt();
+            var  netId    = new NetworkObjectId(objectId);
+
+            if (_spawnedObjects.TryGetValue(netId, out var netObj))
+            {
+                _callbacks?.OnObjectDespawned(netObj);
+                _spawnedObjects.Remove(netId);
+                Destroy(netObj.gameObject);
+                Debug.Log($"[NetworkRunner] Client: Destroyed object {netId} (left AOI)");
+            }
         }
 
         // ── Unity Lifecycle ────────────────────────────────────────────────────

@@ -42,10 +42,50 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
+// WebSockets (Box Arena Test)
+app.UseWebSockets();
+
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path == "/ws")
+    {
+        if (context.WebSockets.IsWebSocketRequest)
+        {
+            var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+            // Get the singleton GameServer.Core.Runners.DefaultNetworkRunner
+            var runner = context.RequestServices.GetService<GameServer.Core.Interfaces.INetworkRunner>() as GameServer.Core.Runners.DefaultNetworkRunner;
+            if (runner != null)
+            {
+                await runner.WebTransport.AcceptWebSocketAsync(webSocket);
+            }
+            return;
+        }
+        else
+        {
+            context.Response.StatusCode = 400;
+        }
+    }
+    else
+    {
+        await next(context);
+    }
+});
+
 // Security and Authorization Middlewares (to be added in Step 3)
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Lobby APIs
+app.MapGet("/api/rooms", (GameServer.Core.Managers.RoomManager roomManager) => 
+{
+    return Results.Ok(roomManager.GetRooms());
+});
+
+app.MapPost("/api/rooms", (GameServer.Core.Managers.RoomManager roomManager, RoomCreateArgs args) => 
+{
+    var room = roomManager.CreateRoom(args.Name, args.MaxPlayers);
+    return Results.Ok(room);
+});
 
 // SignalR Hub Endpoint
 app.MapHub<GameServer.App.Hubs.DashboardHub>("/dashboardHub");
@@ -56,3 +96,5 @@ app.MapControllers();
 app.MapGet("/", () => "Game Server Dashboard (API)");
 
 app.Run();
+
+public record RoomCreateArgs(string Name, int MaxPlayers);
